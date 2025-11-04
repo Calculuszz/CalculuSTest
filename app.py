@@ -512,16 +512,16 @@ PROMPT_TEMPLATES = {
 # 4) UI
 # =========================
 st.set_page_config(layout="wide")
-st.title("🧠 AI Question Generator – Calculus I (Final Review Style)")
+st.title("🧠 Quiz – Calculus I (Final Review)")
 
-st.write("เลือกประเภทโจทย์ แล้วให้ AI ปั่นโจทย์ใหม่ที่ตรรกะเหมือนเดิมแต่ตัวเลข/หน้าตาเปลี่ยน")
+st.write("เลือกประเภทโจทย์ตาม Flie Final Review Problems")
 
 problem_type = st.selectbox("เลือกแนวโจทย์:", PROMPT_TEMPLATES.keys())
 
 # =========================
 # 5) ปุ่มสร้างโจทย์
 # =========================
-if st.button("🚀 ปั่นโจทย์ใหม่จากแนวนี้"):
+if st.button("🚀 Gen Problem"):
     selected_prompt = PROMPT_TEMPLATES[problem_type]
 
     with st.spinner("กำลังให้ AI สร้างโจทย์..."):
@@ -550,7 +550,7 @@ if "current_problem" in st.session_state:
 
     st.subheader(f"แนวที่เลือก: {prob['type']}")
 
-    st.markdown("### 📘 โจทย์ (เรนเดอร์ด้วย LaTeX)")
+    st.markdown("### 📘 โจทย์")
     if prob["question_latex"]:
         st.latex(prob["question_latex"])
         with st.expander("ดูโค้ด LaTeX ของโจทย์ (ก๊อปไปใช้ต่อได้)"):
@@ -558,7 +558,7 @@ if "current_problem" in st.session_state:
     else:
         st.warning("ไม่มี `question_latex` ใน JSON ที่ได้รับ")
 
-    st.markdown("### ✅ เฉลย (เรนเดอร์ด้วย LaTeX)")
+    st.markdown("### ✅ เฉลย")
     if prob["solution_latex"]:
         st.latex(prob["solution_latex"])
         with st.expander("ดูโค้ด LaTeX ของเฉลย (ก๊อปไปใช้ต่อได้)"):
