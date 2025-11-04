@@ -1,0 +1,567 @@
+import streamlit as st
+from google import genai
+from google.genai import types
+import json
+
+# =========================
+# 1) ใส่ API KEY ตรงนี้เลย
+# =========================
+API_KEY = "AIzaSyCGm_17vPRguVGK_X3Y2qyuliuljOup2c4"   # 👈 แทนที่ด้วยคีย์ของคุณ
+
+if API_KEY == "YOUR_API_KEY_HERE":
+    st.error("กรุณาใส่ API key ในตัวแปร API_KEY ก่อนรัน")
+    st.stop()
+
+# สร้าง client ของ Gemini
+client = genai.Client(api_key=API_KEY)
+
+# =========================
+# 2) ตั้งค่าให้ตอบกลับเป็น JSON + LaTeX
+# =========================
+generation_config = types.GenerateContentConfig(
+    response_mime_type="application/json",
+)
+
+# =========================
+# 3) PROMPT_TEMPLATES
+#    ใช้โจทย์จาก Final Review เป็น "ต้นแบบ"
+# =========================
+PROMPT_TEMPLATES = {
+
+    # ---------- Part A : Absolute extrema ----------
+    "A1: Absolute Extrema": (
+        "You are an AI Question Generator for a Calculus I final review.\n"
+        "Original exam model:\n"
+        "A1(c) จงหาค่าสูงสุดและต่ำสุดสัมบูรณ์ของฟังก์ชัน $f(x)=x^{3}-6x^{2}+9x+3$ สำหรับ $-1\le x\le5$.\n\n"
+        "Your task:\n"
+        "1) Generate ONE NEW absolute extrema problem that follows the same logic (find f', find critical points, test points) but is significantly harder.\n"
+        "   - The function $f(x)$ must be more complex than a polynomial. Use a combination of polynomial, trigonometric, or exponential functions (e.g., $f(x) = x - 2\\sin(x)$ or $f(x) = x \\cdot e^{-x/2}$). \n"
+        "   - The goal is to make the calculation 'ถึกขึ้น' (more tedious).\n"
+        "   - The critical points should be non-integers (e.g., involving $\\pi$, $\\sqrt{3}$, or fractions) making the final comparison of values more difficult.\n"
+        "   - The interval $[a, b]$ should be chosen appropriately for the function.\n"
+        "2) Solve it completely, showing all steps: finding the derivative, solving for critical points, and evaluating $f(x)$ at all critical points and endpoints to find the absolute max/min.\n\n"
+        "VERY IMPORTANT LaTeX RULES:\n"
+        "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+        "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+        "- Do NOT start with words like `Let` outside math mode.\n"
+        "- If you need to write words (Let, Find f'(x), Critical points, Endpoints, Compare, etc.), wrap them inside `\\\\text{...}`.\n"
+        "- Example of the STYLE (example only):\n"
+        "  \"\\\\begin{align*}\n"
+        "     f(x) &= x - 2\\sin(x) \\\\text{ on } [0, 2\\pi] \\\\\n"
+        "     f'(x) &= 1 - 2\\cos(x) \\\\\n"
+        "     \\\\text{Set } f'(x) &= 0 \\\\Rightarrow 1 - 2\\cos(x) = 0 \\\\Rightarrow \\cos(x) = \\frac{1}{2} \\\\\n"
+        "     \\\\text{Critical points in } [0, 2\\pi] &\\\\text{ are } x = \\frac{\\pi}{3} \\\\text{ and } x = \\frac{5\\pi}{3} \\\\\n"
+        "     \\\\text{Compare values:} \\\\\n"
+        "     f(0) &= 0 - 2\\sin(0) = 0 \\\\\n"
+        "     f(2\\pi) &= 2\\pi - 2\\sin(2\\pi) = 2\\pi \\approx 6.28 \\\\\n"
+        "     f(\\pi/3) &= \\frac{\\pi}{3} - 2\\sin(\\frac{\\pi}{3}) = \\frac{\\pi}{3} - 2(\\frac{\\sqrt{3}}{2}) = \\frac{\\pi}{3} - \\sqrt{3} \\approx 1.047 - 1.732 = -0.685 \\\\\n"
+        "     f(5\\pi/3) &= \\frac{5\\pi}{3} - 2\\sin(\\frac{5\\pi}{3}) = \\frac{5\\pi}{3} - 2(-\\frac{\\sqrt{3}}{2}) = \\frac{5\\pi}{3} + \\sqrt{3} \\approx 5.236 + 1.732 = 6.968 \\\\\n"
+        "     \\\\text{Abs. Min} &= \\frac{\\pi}{3} - \\sqrt{3} \\\\\n"
+        "     \\\\text{Abs. Max} &= \\frac{5\\pi}{3} + \\sqrt{3}\n"
+        "   \\\\end{align*}\".\n\n"
+        "Output format:\n"
+        "{\n"
+        "  \"question_latex\": \"\\\\text{จงหาค่าสูงสุดและต่ำสุดสัมบูรณ์ของฟังก์ชัน } f(x) = ... \\\\text{ บนช่วง } [a, b]\",\n"
+        "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+        "}\n"
+        "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+    ),
+
+    "A2: Optimization": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "A2. (a) จงหาพื้นที่ที่มากที่สุดที่เป็นไปได้ของสามเหลี่ยมหน้าจั่วที่แนบอยู่ในวงกลมรัศมี 1 หน่วย\n"
+    "    (b) จงหาความยาวเส้นรอบรูปที่มากที่สุดที่เป็นไปได้ของสามเหลี่ยมหน้าจั่วที่แนบอยู่ในวงกลมรัศมี 1 หน่วย\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW optimization problem that follows the same logic (set up a function for a quantity to be maximized/minimized, find its derivative, find critical points, and test) but is significantly harder.\n"
+    "   - This new problem should involve 3D geometry inscribed in 3D geometry (e.g., cone in a sphere, cylinder in a sphere, cylinder in a cone).\n"
+    "   - A classic harder problem is finding the maximum volume of a cone inscribed in a sphere.\n"
+    "   - Give a specific value for the radius (e.g., R=6 or R=3) to make the final answer an explicit number.\n"
+    "   - The question should ask for the *dimensions* (like height and radius) of the shape, not just the max volume.\n"
+    "2) Solve it completely, showing all steps: setting up the volume function $V$ in terms of one variable (like height $h$ or an internal radius $x$), finding $V'$, solving $V'=0$, and testing points to find the maximum.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Let, Setup, Volume, Derivative, Critical points, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     \\\\text{Let } R &\\\\text{ be the sphere radius, } R=6. \\\\\n"
+    "     \\\\text{Let } r &\\\\text{ be the cone's base radius and } h \\\\text{ be its height.} \\\\\n"
+    "     \\\\text{From a cross-section, we relate } r, h, \\\\text{ and } R. \\\\\n"
+    "     \\\\text{Let the cone vertex be at the bottom. Height is } h. \\\\\n"
+    "     \\\\text{The center of the sphere is at height } h-R \\\\text{ from the cone base.} \\\\\n"
+    "     r^2 + (h-R)^2 &= R^2 \\\\\n"
+    "     r^2 &= R^2 - (h^2 - 2hR + R^2) = 2hR - h^2 \\\\\n"
+    "     \\\\text{Using } R=6: r^2 &= 12h - h^2 \\\\\n"
+    "     \\\\text{Volume } V &= \\\\frac{1}{3} \\\\pi r^2 h = \\\\frac{1}{3} \\\\pi (12h - h^2) h \\\\\n"
+    "     V(h) &= \\\\frac{\\\\pi}{3} (12h^2 - h^3) \\\\text{, for } 0 \\\\le h \\\\le 12 \\\\\n"
+    "     V'(h) &= \\\\frac{\\\\pi}{3} (24h - 3h^2) = \\\\pi h(8 - h) \\\\\n"
+    "     \\\\text{Set } V'(h) &= 0 \\\\Rightarrow h=0 \\\\text{ (min volume) or } h=8. \\\\\n"
+    "     \\\\text{Max volume occurs at } h=8. \\\\\n"
+    "     \\\\text{At } h=8, r^2 &= 12(8) - 8^2 = 96 - 64 = 32 \\\\\n"
+    "     r &= \\\\sqrt{32} = 4\\\\sqrt{2} \\\\\n"
+    "     \\\\text{Dimensions:} &\\\\text{ height } h=8, \\\\text{ radius } r=4\\\\sqrt{2}. \\\\\n"
+    "     \\\\text{Max Volume } V &= \\\\frac{1}{3} \\\\pi (32)(8) = \\\\frac{256\\\\pi}{3}\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาขนาด (ความสูง } h \\\\text{ และรัศมีฐาน } r)\\\\text{ ของกรวยกลมตรงที่มีปริมาตรมากที่สุด ... R=...}\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+    ),
+    
+    "A3: Limits": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n"
+    "A3(i) $lim_{x\\rightarrow 0^{+}}(\\frac{1}{x}-csc~x)$\n"
+    "A3(j) $lim_{x\\rightarrow -\\infty}x~ln(\\frac{3x-1}{3x+1})$\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW limit problem that follows the most complex logic from A3: indeterminate forms $0 \\cdot \\infty$ or $\\infty - \\infty$.\n"
+    "   - The problem MUST require significant algebraic manipulation (e.g., combining fractions, or rewriting as a single fraction) *before* L'Hopital's rule can be applied.\n"
+    "   - The goal is to be 'ถึกขึ้น' (more tedious): After the initial manipulation, the resulting $0/0$ form should require L'Hopital's rule to be applied at least **twice** or **three times** to solve.\n"
+    "   - Do not create a simple $0/0$ or $\\infty/\\infty$ problem.\n"
+    "2) Solve it completely, showing all steps: the initial form, the algebraic manipulation, and all subsequent applications of L'Hopital's rule.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Let, Form, Combine, L'H, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only for A3(i)):\n"
+    "  \"\\\\begin{align*}\n"
+    "     L &= \\\\lim_{x\\\\to 0^{+}}(\\\\frac{1}{x}-c s c~x) \\\\quad (\\\\text{Form } \\\\infty - \\\\infty) \\\\\n"
+    "       &= \\\\lim_{x\\\\to 0^{+}}(\\\\frac{1}{x} - \\\\frac{1}{\\\\sin x}) \\\\\n"
+    "       &= \\\\lim_{x\\\\to 0^{+}} \\\\frac{\\\\sin x - x}{x \\\\sin x} \\\\quad (\\\\text{Form } 0/0) \\\\\n"
+    "       &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^{+}} \\\\frac{\\\\cos x - 1}{\\\\sin x + x \\\\cos x} \\\\quad (\\\\text{Form } 0/0) \\\\\n"
+    "       &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^{+}} \\\\frac{-\\\\sin x}{\\\\cos x + \\\\cos x - x \\\\sin x} \\\\\n"
+    "       &= \\\\frac{-0}{1 + 1 - 0} = 0\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาค่าลิมิต } \\\\lim_{x\\\\to ...} ...\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+    ),
+    
+    "B1: Indeterminate Powers": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "B1(a) จงหาค่าลิมิต $lim_{x\\rightarrow 0}((1-sin~2x)^{1/x}+(1-cos~3x)^{sin~x})$\n"
+    "B1(c) จงหาค่าลิมิต $lim_{x\\rightarrow \\infty}(2x+3)^{1/ln(3x+2)}\\cdot(\\pi-2~arctan~x)^{\\pi/x}$\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW limit problem that follows the core logic of B1: it must be a SUM or PRODUCT of **two separate indeterminate power limits** (e.g., $1^\\infty$, $0^0$, $\\infty^0$).\n"
+    "   - The user must be forced to solve two independent limits (L1 and L2) and then add or multiply the results.\n"
+    "   - The goal is to be 'ถึกขึ้น' (more tedious): The calculation for at least one of the sub-limits (after taking $\\ln y$ and setting up the $0/0$ or $\\infty/\\infty$ form) must require a complex application of L'Hopital's rule (e.g., involving product rule, chain rule, or multiple applications).\n"
+    "   - Example idea: $\\lim_{x\\to 0^+} (\\frac{1}{x})^{\\tan x} + (e^x + \\sin x)^{1/x}$\n"
+    "2) Solve it completely, showing all steps: identify the two sub-limits (L1, L2), solve each one using the $\\ln y$ and L'Hopital's rule method, then combine them for the final answer.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Let, Part 1, Part 2, Final Answer, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     \\\\text{Let } L &= \\\\lim_{x\\\\to 0^+} ( (x)^{\\\\sin x} + (1+3x)^{1/x} ) \\\\\n"
+    "     \\\\text{Let } L_1 &= \\\\lim_{x\\\\to 0^+} (x)^{\\\\sin x} \\\\quad (\\\\text{Form } 0^0) \\\\\n"
+    "     \\\\text{Let } y_1 &= x^{\\\\sin x} \\\\Rightarrow \\\\ln y_1 = \\\\sin x \\\\ln x = \\\\frac{\\\\ln x}{\\\\csc x} \\\\quad (\\\\text{Form } \\\\infty/\\\\infty) \\\\\n"
+    "     \\\\lim_{x\\\\to 0^+} \\\\ln y_1 &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^+} \\\\frac{1/x}{-\\\\csc x \\\\cot x} = \\\\lim_{x\\\\to 0^+} \\\\frac{-\\\\sin^2 x}{x \\\\cos x} \\\\quad (\\\\text{Form } 0/0) \\\\\n"
+    "     &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^+} \\\\frac{-2\\\\sin x \\\\cos x}{\\\\cos x - x \\\\sin x} = \\\\frac{-0}{1 - 0} = 0 \\\\\n"
+    "     \\\\text{Therefore } L_1 &= e^0 = 1. \\\\\n"
+    "     \\\\text{Part 2: } L_2 &= \\\\lim_{x\\\\to 0^+} (1+3x)^{1/x} \\\\quad (\\\\text{Form } 1^\\\\infty) \\\\\n"
+    "     \\\\text{Let } y_2 &= (1+3x)^{1/x} \\\\Rightarrow \\\\ln y_2 = \\\\frac{\\\\ln(1+3x)}{x} \\\\quad (\\\\text{Form } 0/0) \\\\\n"
+    "     \\\\lim_{x\\\\to 0^+} \\\\ln y_2 &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^+} \\\\frac{3/(1+3x)}{1} = 3 \\\\\n"
+    "     \\\\text{Therefore } L_2 &= e^3. \\\\\n"
+    "     \\\\text{Final Answer: } L &= L_1 + L_2 = 1 + e^3\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาค่าลิมิต } \\\\lim_{x\\\\to ...} ...\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+    ),
+    "B2: Curve Sketching": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "B2. จงวิเคราะห์และร่างกราฟของฟังก์ชัน $f(x)=\\frac{12}{x^{2}+2x+4}$ (หาช่วงเพิ่ม/ลด, เว้า, จุดวิกฤต, จุดเปลี่ยนเว้า, เส้นกำกับ).\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW curve sketching problem that follows the same logic: find f', f'', analyze signs for intervals, find critical/inflection points, and find asymptotes.\n"
+    "2) The problem must be 'ถึกขึ้น' (significantly more tedious) than the original.\n"
+    "   - Use a non-polynomial function, for example, involving $e^x$ or $\\ln x$ combined with a polynomial (e.g., $f(x) = x^2 e^{-x}$ or $f(x) = \\frac{\\ln x}{x}$). \n"
+    "   - The complexity must come from the derivatives. The second derivative $f''(x)$ should be complex, and solving $f''(x)=0$ should require non-trivial algebra.\n"
+    "   - The critical points and inflection points should be non-integers (e.g., $x=e^{3/2}$ or $x=2+\\sqrt{2}$).\n"
+    "3) The question must ask for all the same components: (a) intervals of increase/decrease, (b) intervals of concavity, (c) critical points and inflection points, and (d) all asymptotes.\n"
+    "4) Solve it completely, showing all analysis steps.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Asymptotes, Derivative 1, Critical points, Inc/Dec, Derivative 2, Concavity, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only for f(x) = lnx / x):\n"
+    "  \"\\\\begin{align*}\n"
+    "     f(x) &= \\\\frac{\\\\ln x}{x} \\\\text{, Domain: } x > 0 \\\\\n"
+    "     \\\\text{Asymptotes:} & \\\\\n"
+    "     \\\\lim_{x \\to 0^+} \\frac{\\\\ln x}{x} &= \\\\frac{-\\infty}{0^+} = -\\infty \\\\Rightarrow \\\\text{Vertical Asymptote at } x=0 \\\\\n"
+    "     \\\\lim_{x \\to \\infty} \\frac{\\\\ln x}{x} &\\\\overset{L'H}{=} \\\\lim_{x \\to \\infty} \\\\frac{1/x}{1} = 0 \\\\Rightarrow \\\\text{Horizontal Asymptote at } y=0 \\\\\n"
+    "     \\\\text{Derivative 1:} & \\\\\n"
+    "     f'(x) &= \\\\frac{x(1/x) - (\\\\ln x)(1)}{x^2} = \\\\frac{1 - \\\\ln x}{x^2} \\\\\n"
+    "     \\\\text{Set } f'(x) &= 0 \\\\Rightarrow 1 - \\\\ln x = 0 \\\\Rightarrow \\\\ln x = 1 \\\\Rightarrow x = e \\\\\n"
+    "     \\\\text{Critical Point:} & x=e \\\\text{ (Local Max at } (e, 1/e)) \\\\\n"
+    "     \\\\text{Increasing on } (0, e), & \\\\text{ Decreasing on } (e, \\infty) \\\\\n"
+    "     \\\\text{Derivative 2:} & \\\\\n"
+    "     f''(x) &= \\\\frac{x^2(-1/x) - (1 - \\\\ln x)(2x)}{x^4} = \\\\frac{-x - 2x + 2x \\\\ln x}{x^4} = \\\\frac{2 \\\\ln x - 3}{x^3} \\\\\n"
+    "     \\\\text{Set } f''(x) &= 0 \\\\Rightarrow 2 \\\\ln x - 3 = 0 \\\\Rightarrow \\ln x = 3/2 \\\\Rightarrow x = e^{3/2} \\\\\n"
+    "     \\\\text{Inflection Point at } &x = e^{3/2} \\\\\n"
+    "     \\\\text{Concave Down on } (0, e^{3/2}), & \\\\text{ Concave Up on } (e^{3/2}, \\infty)\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{กำหนดให้ } f(x) = ... \\\\text{ จงวิเคราะห์ฟังก์ชันนี้โดยหา: (a) ช่วงเพิ่ม/ลด, (b) ช่วงเว้าบน/ล่าง, (c) จุดวิกฤตและจุดเปลี่ยนเว้า, และ (d) เส้นกำกับทั้งหมด}\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+"B3: Growth Model Analysis": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "B3. (d) ให้ $P(t) = \\frac{M}{1+Ae^{-t/T}}$ จงหาเวลา $t$ ที่ทำให้อัตราการเติบโตของประชากร ($P'(t)$) มีค่าสูงสุด[cite: 38, 50].\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW growth model problem that follows the same logic: finding the time of maximum growth rate (i.e., finding the inflection point by setting $P''(t)=0$).\n"
+    "2) The problem must be 'ถึกขึ้น' (significantly more tedious). Use the **Gompertz function** instead of the Logistic function. \n"
+    "   - Example form: $P(t) = K \\cdot e^{-A e^{-rt}}$\n"
+    "   - Finding $P'(t)$ (the growth rate) will require a complex chain rule.\n"
+    "   - Finding $P''(t)$ (to maximize the rate) will require a very complex product rule on top of chain rules.\n"
+    "3. Provide specific values for the constants (K, A, r) and ask for the time $t$ when the growth rate $P'(t)$ is maximal, AND the population $P(t)$ at that time.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Let, Growth Rate, Set, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only for Gompertz):\n"
+    "  \"\\\\begin{align*}\n"
+    "     P(t) &= 1000 e^{-5e^{-0.1t}} \\\\\n"
+    "     \\\\text{Growth Rate } R(t) = P'(t) &= 1000 \\\\cdot e^{-5e^{-0.1t}} \\\\cdot \\\\frac{d}{dt}(-5e^{-0.1t}) \\\\\n"
+    "     P'(t) &= 1000 \\\\cdot e^{-5e^{-0.1t}} \\\\cdot (-5e^{-0.1t}) \\\\cdot (-0.1) \\\\\n"
+    "     P'(t) &= 500 \\\\cdot e^{-0.1t} \\\\cdot e^{-5e^{-0.1t}} \\\\\n"
+    "     \\\\text{Find max rate by setting } P''(t) = 0. & \\\\text{ Let } R(t) = P'(t). \\\\text{ Find } R'(t) \\\\text{ (Product Rule):} \\\\\n"
+    "     R'(t) &= 500 \\\\left[ (e^{-0.1t}(-0.1)) \\\\cdot (e^{-5e^{-0.1t}}) + (e^{-0.1t}) \\\\cdot (e^{-5e^{-0.1t}} \\\\cdot 5e^{-0.1t} \\\\cdot 0.1) \\\\right] \\\\\n"
+    "     R'(t) &= 500 \\\\cdot e^{-0.1t} \\\\cdot e^{-5e^{-0.1t}} \\\\left[ -0.1 + 0.5e^{-0.1t} \\\\right] \\\\\n"
+    "     \\\\text{Set } R'(t) = 0. & \\\\text{ The exponential terms are always > 0.} \\\\\n"
+    "     -0.1 + 0.5e^{-0.1t} &= 0 \\\\\n"
+    "     0.5e^{-0.1t} &= 0.1 \\\\\n"
+    "     e^{-0.1t} &= \\\\frac{0.1}{0.5} = 0.2 = \\\\frac{1}{5} \\\\\n"
+    "     -0.1t &= \\\\ln(1/5) = -\\\\ln(5) \\\\\n"
+    "     t &= 10 \\\\ln(5) \\\\\n"
+    "     \\\\text{Population at this time:} & \\\\\n"
+    "     P(10 \\\\ln 5) &= 1000 e^{-5e^{-0.1(10 \\ln 5)}} = 1000 e^{-5e^{-\\ln 5}} \\\\\n"
+    "     &= 1000 e^{-5(1/5)} = 1000 e^{-1} = \\\\frac{1000}{e}\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{การเติบโตของประชากรกลุ่มหนึ่งเป็นไปตามสมการ Gompertz } P(t) = ... \\\\text{ จงหาเวลา } t \\\\text{ ที่อัตราการเติบโตของประชากรมีค่าสูงสุด และหาจำนวนประชากร ณ เวลานั้น}\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+"C1: Area Between Curves": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "C1. จงเขียนอินทิกรัลแสดงพื้นที่ของบริเวณปิดล้อมด้วยแส้นโค้งต่อไปนี้\n"
+    "(a) $y=x^{2}+2,$ $y=-x-1$, $x=-1;$, $x=1$ (Simple Top-Bottom)\n"
+    "(b) $\\frac{x^{2}}{4}+y^{2}=2, x=2y^{2}$ (Simple Right-Left)\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW area problem that follows the same core logic (find intersections, set up $\\int (f-g)$) but is significantly harder.\n"
+    "2) The problem must be 'ถึกขึ้น' (more tedious) in two ways:\n"
+    "   - The functions must **cross over** multiple times, forcing the total area to be a SUM of multiple integrals (e.g., $\\int_{a}^{b} (f-g) dx + \\int_{b}^{c} (g-f) dx$).\n"
+    "   - The intersection points should be non-trivial (e.g., cubic roots, or involving square roots).\n"
+    "3) The AI must **solve for the total area completely**, not just set up the integral.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Intersections, Region 1, Region 2, Total Area, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     \\\\text{Find area between } y &= x^3 - 3x \\\\text{ and } y = x. \\\\\n"
+    "     \\\\text{Intersections: } & x^3 - 3x = x \\\\Rightarrow x^3 - 4x = 0 \\\\\n"
+    "     & x(x^2 - 4) = 0 \\\\Rightarrow x = -2, 0, 2. \\\\\n"
+    "     \\\\text{This creates two regions.} \\\\\n"
+    "     \\\\text{Region 1 (on } [-2, 0]): & \\\\text{ Test } x=-1: (x^3-3x) = 2, (x) = -1. \\\\Rightarrow x^3-3x \\\\text{ is on top.} \\\\\n"
+    "     A_1 &= \\\\int_{-2}^{0} ((x^3 - 3x) - (x)) \\\\, dx = \\\\int_{-2}^{0} (x^3 - 4x) \\\\, dx \\\\\n"
+    "         &= \\\\left[ \\\\frac{x^4}{4} - 2x^2 \\\\right]_{-2}^{0} = (0) - (\\\\frac{16}{4} - 2(4)) = -(4 - 8) = 4 \\\\\n"
+    "     \\\\text{Region 2 (on } [0, 2]): & \\\\text{ Test } x=1: (x^3-3x) = -2, (x) = 1. \\\\Rightarrow x \\\\text{ is on top.} \\\\\n"
+    "     A_2 &= \\\\int_{0}^{2} (x - (x^3 - 3x)) \\\\, dx = \\\\int_{0}^{2} (4x - x^3) \\\\, dx \\\\\n"
+    "         &= \\\\left[ 2x^2 - \\\\frac{x^4}{4} \\\\right]_{0}^{2} = (2(4) - \\\\frac{16}{4}) - (0) = (8 - 4) = 4 \\\\\n"
+    "     \\\\text{Total Area } A &= A_1 + A_2 = 4 + 4 = 8\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาพื้นที่ทั้งหมดของบริเวณที่ปิดล้อมด้วยเส้นโค้ง } y = ... \\\\text{ และ } y = ...\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+"C2: Applied Integration": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "C2. Given a graph of $v_A(t)$ and $v_B(t)$. Questions are conceptual:\n"
+    "(a) Interpret the area under $v_A$. \n"
+    "(b) Which car is ahead? [cite: 63]\n"
+    "(c) Interpret the shaded area between them. \n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW problem that uses the same logic (integral of $v$ is displacement; integral of $v_A - v_B$ is relative distance) but requires **direct calculation** (making it 'ถึกขึ้น').\n"
+    "2) Do NOT provide a graph. Provide two explicit velocity functions, $v_A(t)$ and $v_B(t)$.\n"
+    "3) Make the functions non-trivial. At least one function must require **integration by parts** or a complex substitution to integrate.\n"
+    "4) The question must ask for: (a) The total distance traveled by one car at a specific time $T$, and (b) The distance *between* the two cars at that same time $T$.\n"
+    "5) Solve it completely, showing all integration steps.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Let, Distance, By Parts, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     \\\\text{Given } v_A(t) = t e^{-t} & \\\\text{ and } v_B(t) = t^2. \\\\text{ Both start at } s(0)=0. \\\\\n"
+    "     \\\\text{(a) Distance of Car A at } t=2: & \\\\\n"
+    "     s_A(2) &= \\\\int_0^2 t e^{-t} \\\\, dt \\\\\n"
+    "     \\\\text{By Parts: } & u=t, \\\\, dv=e^{-t} dt \\\\Rightarrow du=dt, \\\\, v=-e^{-t} \\\\\n"
+    "     s_A(2) &= \\\\left[ -t e^{-t} \\\\right]_0^2 - \\\\int_0^2 -e^{-t} \\\\, dt \\\\\n"
+    "            &= (-2e^{-2} - 0) + \\\\int_0^2 e^{-t} \\\\, dt \\\\\n"
+    "            &= -2e^{-2} + \\\\left[ -e^{-t} \\\\right]_0^2 \\\\\n"
+    "            &= -2e^{-2} + (-e^{-2} - (-e^0)) = -3e^{-2} + 1 \\\\\n"
+    "     \\\\text{(b) Distance between cars at } t=2: & \\\\\n"
+    "     s_B(2) &= \\\\int_0^2 t^2 \\\\, dt = \\\\left[ \\\\frac{t^3}{3} \\\\right]_0^2 = \\\\frac{8}{3} \\\\\n"
+    "     \\\\text{Relative Distance } D &= s_B(2) - s_A(2) \\\\\n"
+    "     D &= \\\\frac{8}{3} - (1 - 3e^{-2}) = \\\\frac{5}{3} + 3e^{-2}\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{รถยนต์ A และ B เริ่มเคลื่อนที่จากหยุดนิ่ง ... } v_A(t) = ... \\\\text{ และ } v_B(t) = ... \\\\text{ (a) จงหาระยะทางที่รถ ... เคลื่อนที่ได้ ... (b) จงหาระยะห่างระหว่างรถทั้งสอง ...}\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+"C3: Volume by Cross-Section": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "C3. จงหาปริมาตรของทรงตันที่มีฐานเป็นบริเวณ R ปิดล้อมด้วย $y=x^{2}-1$ และ $y=x+1$, และภาคตัดที่ตั้งฉากกับแกน X เป็นรูปสี่เหลี่ยมจัตุรัส.\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW volume by cross-section problem that follows the same logic: $V = \\int_a^b A(x) \\, dx$, where $A(x)$ is the cross-sectional area.\n"
+    "2) The problem must be 'ถึกขึ้น' (significantly more tedious) by changing the cross-section.\n"
+    "   - Instead of a square (where $A = s^2$), the cross-section must be a shape where the area formula is more complex, e.g., a **semicircle** (where $A = \\frac{1}{2}\\pi r^2 = \\frac{\\pi}{8} s^2$), or an **equilateral triangle** (where $A = \\frac{\\sqrt{3}}{4} s^2$), or an **isosceles right triangle with hypotenuse on the base** (where $A = \\frac{1}{4} s^2$).\n"
+    "   - The base region R can be the same or slightly different, but the integral $\\int A(x) \\, dx$ must be a complex polynomial integration (requiring expansion, etc.).\n"
+    "3) The AI must solve for the total volume completely.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Base, Intersections, Side, Area, Volume, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     \\\\text{Base curves: } y = 4 - x^2 \\\\text{ and } y = 0. \\\\\n"
+    "     \\\\text{Intersections: } & 4 - x^2 = 0 \\\\Rightarrow x = -2, 2. \\\\\n"
+    "     \\\\text{Side length } s(x) &= (\\\\text{Top}) - (\\\\text{Bottom}) = (4 - x^2) - 0 = 4 - x^2. \\\\\n"
+    "     \\\\text{Cross-section:} & \\\\text{Semicircle with diameter } s(x). \\\\\n"
+    "     \\\\text{Radius } r(x) &= \\\\frac{s(x)}{2} = \\\\frac{4 - x^2}{2}. \\\\\n"
+    "     \\\\text{Area } A(x) &= \\\\frac{1}{2} \\\\pi (r(x))^2 = \\\\frac{1}{2} \\\\pi \\\\left( \\\\frac{4 - x^2}{2} \\\\right)^2 \\\\\n"
+    "     A(x) &= \\\\frac{\\\\pi}{8} (4 - x^2)^2 = \\\\frac{\\\\pi}{8} (16 - 8x^2 + x^4) \\\\\n"
+    "     \\\\text{Volume } V &= \\\\int_{-2}^{2} A(x) \\\\, dx = \\\\frac{\\\\pi}{8} \\\\int_{-2}^{2} (16 - 8x^2 + x^4) \\\\, dx \\\\\n"
+    "     \\\\text{(Even function)} &= 2 \\\\cdot \\\\frac{\\\\pi}{8} \\\\left[ 16x - \\\\frac{8x^3}{3} + \\\\frac{x^5}{5} \\\\right]_{0}^{2} \\\\\n"
+    "     &= \\\\frac{\\\\pi}{4} \\\\left[ (16(2) - \\\\frac{8(8)}{3} + \\\\frac{32}{5}) - 0 \\\\right] \\\\\n"
+    "     &= \\\\frac{\\\\pi}{4} \\\\left( 32 - \\\\frac{64}{3} + \\\\frac{32}{5} \\\\right) = \\\\frac{\\\\pi}{4} \\\\left( \\\\frac{480 - 320 + 96}{15} \\\\right) \\\\\n"
+    "     &= \\\\frac{\\\\pi}{4} \\\\left( \\\\frac{256}{15} \\\\right) = \\\\frac{64\\\\pi}{15}\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาปริมาตรของทรงตันที่มีฐานเป็นบริเวณ R ... และภาคตัดที่ตั้งฉากกับแกน X เป็นรูป ...}\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+"C4: Volume by Washers": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "C4. จงหาปริมาตรของทรงตันที่ได้จากการหมุนบริเวณ R...\n"
+    "(a) R ปิดล้อมด้วย $y=\\sqrt{x}, y=0, x=4$, รอบแกน X (Disk Method) [cite: 68]\n"
+    "(b) R ปิดล้อมด้วย $8y=x^2, y=\\sqrt{x}$, รอบเส้นตรง $x=-1$ (Washer Method) \n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW volume of revolution problem that uses the **Washer Method** logic (like C4b).\n"
+    "2) The problem must be 'ถึกขึ้น' (significantly more tedious) in two ways:\n"
+    "   - The region R should be bounded by **non-polynomial functions** (e.g., trigonometric, exponential).\n"
+    "   - The axis of revolution must be a **horizontal or vertical line *off* the main axes** (e.g., $y=c$ or $x=c$), forcing a complex setup for the outer radius $R$ and inner radius $r$.\n"
+    "   - The resulting integral $\\int \\pi (R(x)^2 - r(x)^2) \\, dx$ must require non-trivial integration (e.g., using **trig identities / power-reduction formulas** to solve).\n"
+    "3) The AI must solve for the total volume completely.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Region, Axis, Washer, Radius, Use, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     \\\\text{Region R bounded by } y = \\\\sin x, y = 0, \\\\text{ from } x=0 \\\\text{ to } x=\\\\pi. \\\\\n"
+    "     \\\\text{Axis of Revolution: } y = 2. \\\\\n"
+    "     \\\\text{Washer Method (dx):} \\\\\n"
+    "     \\\\text{Outer Radius } R(x) &= (\\\\text{axis}) - (\\\\text{far curve}) = 2 - 0 = 2 \\\\\n"
+    "     \\\\text{Inner Radius } r(x) &= (\\\\text{axis}) - (\\\\text{near curve}) = 2 - \\\\sin x \\\\\n"
+    "     V &= \\\\int_0^{\\\\pi} \\\\pi ( [R(x)]^2 - [r(x)]^2 ) \\\\, dx \\\\\n"
+    "     V &= \\\\pi \\\\int_0^{\\\\pi} ( (2)^2 - (2 - \\\\sin x)^2 ) \\\\, dx \\\\\n"
+    "     V &= \\\\pi \\\\int_0^{\\\\pi} ( 4 - (4 - 4\\\\sin x + \\\\sin^2 x) ) \\\\, dx \\\\\n"
+    "     V &= \\\\pi \\\\int_0^{\\\\pi} ( 4\\\\sin x - \\\\sin^2 x ) \\\\, dx \\\\\n"
+    "     \\\\text{(Use power reduction: } \\\\sin^2 x = \\\\frac{1 - \\\\cos(2x)}{2}) \\\\\n"
+    "     V &= \\\\pi \\\\int_0^{\\\\pi} ( 4\\\\sin x - \\\\frac{1}{2}(1 - \\\\cos(2x)) ) \\\\, dx \\\\\n"
+    "     V &= \\\\pi \\\\left[ -4\\\\cos x - \\\\frac{1}{2}x + \\\\frac{1}{4}\\\\sin(2x) \\\\right]_0^{\\\\pi} \\\\\n"
+    "     V &= \\\\pi \\\\left[ (-4\\\\cos \\\\pi - \\\\frac{\\\\pi}{2} + \\\\frac{1}{4}\\\\sin(2\\\\pi)) - (-4\\\\cos 0 - 0 + 0) \\\\right] \\\\\n"
+    "     V &= \\\\pi \\\\left[ (-4(-1) - \\\\frac{\\\\pi}{2} + 0) - (-4(1)) \\\\right] \\\\\n"
+    "V &= \\\\pi \\\\left[ 4 - \\\\frac{\\\\pi}{2} + 4 \\\\right] = 8\\\\pi - \\\\frac{\\\\pi^2}{2}\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาปริมาตรของทรงตันที่เกิดจากการหมุนบริเวณ R ที่ปิดล้อมด้วย ... รอบเส้นตรง ...}\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+    # ---------- Part D1 : Trig integral sin^m cos^n ----------
+    "D1(a) Trig Integral (sin^odd cos^even)": (
+        "You are an AI Question Generator for a Calculus I final review.\n"
+        "Below is an ORIGINAL exam problem from the course:\n\n"
+        "D1(a) จงหา\n"
+        "  \\[ \\int \\sin^5 x \\cos^4 x \\, dx \\]\n\n"
+        "Your task:\n"
+        "1) Generate ONE NEW trigonometric integral of the SAME TYPE:\n"
+        "   - Of the form \\int \\sin^m x \\cos^n x \\, dx with m or n an odd positive integer.\n"
+        "   - Choose exponents in the range 2 to 7.\n"
+        "   - The integral should be solvable by the usual techniques (separate one sin x or cos x,\n"
+        "     use \\sin^2 x + \\cos^2 x = 1, substitution, etc.).\n"
+        "   - Do NOT copy the original exponents (5 and 4); choose a different pair.\n"
+        "2) Solve your new integral step by step, clearly showing the substitution.\n\n"
+        "Output format:\n"
+        "{\n"
+        "  \"question_latex\": \"\\\\int ... dx\",\n"
+        "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+        "}\n"
+        "Only this JSON object; both values are pure LaTeX code."
+    ),
+
+    # ---------- Part D2 : Integration by parts with ln x ----------
+"D2(a) Integral x^a ln x": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "D2(a) จงหา \\int x^a \\ln x \\, dx เมื่อ a เป็นจำนวนจริงใด ๆ.\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW integral problem that requires integration by parts and involves ln x.\n"
+    "   - Example structure: \\int x^n \\ln x \\, dx, or \\int x^n (\\ln x)^2 \\, dx, etc.\n"
+    "   - Choose specific integer exponents so that the final answer is explicit.\n"
+    "2) Solve it completely with integration by parts steps.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- Do NOT start with words like `Let` outside math mode.\n"
+    "- If you need to write words (Let, Now, Therefore, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only):\n"
+    "  \"\\\\begin{align*}\n"
+    "     I &= \\\\int x^2 (\\\\ln x)^2 \\\\, dx \\\\\n"
+    "       &= \\\\text{(integration by parts: let } u = (\\\\ln x)^2, \\\\, dv = x^2 dx\\\\text{)} \\\\\n"
+    "       &= ... \\\\\n"
+    "       &= \\\\frac{x^3}{3}(\\\\ln x)^2 - \\\\frac{2x^3}{9} \\\\ln x + C\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\int ... dx\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+),
+
+    # ---------- Part E1 : Trig with sec and tan ----------
+    "E1(a) Integral sec^4 x tan^10 x": (
+        "You are an AI Question Generator for a Calculus I final review.\n"
+        "Original-style problem:\n"
+        "E1(a) จงหา \\int \\sec^4 x \\tan^{10} x \\, dx.\n\n"
+        "Your task:\n"
+        "1) Create a NEW integral of the same family:\n"
+        "   - Of the form \\int \\sec^{2m} x \\tan^{2n} x \\, dx with positive integers m,n.\n"
+        "   - The integral should be solvable using identities 1 + \\tan^2 x = \\sec^2 x\n"
+        "     and substitution u = \\tan x or u = \\sec x.\n"
+        "   - Use different exponents from (4, 10).\n"
+        "2) Provide a full step-by-step solution in LaTeX.\n\n"
+        "Output format:\n"
+        "{\n"
+        "  \"question_latex\": \"\\\\int ... dx\",\n"
+        "  \"solution_latex\": \"...LaTeX solution...\"\n"
+        "}\n"
+        "Return only this JSON, nothing else."
+    ),
+
+    # ---------- Part F1 : Rational function / partial fractions ----------
+    "F1(b) Rational Integral (partial fractions)": (
+        "You are an AI Question Generator for a Calculus I final review.\n"
+        "Original example:\n"
+        "F1(b) จงอินทิเกรต\n"
+        "  \\[ \\int \\frac{2x^2 + 5x - 6}{x^2 - x - 2} \\, dx \\]\n\n"
+        "Your task:\n"
+        "1) Generate ONE NEW rational integral suitable for partial fractions:\n"
+        "   - A rational function where numerator and denominator are polynomials of degree 1 or 2.\n"
+        "   - Denominator should factor into distinct linear or simple quadratic factors over R.\n"
+        "   - Requires algebraic manipulation (division if needed) and then partial fractions.\n"
+        "2) Solve it fully in LaTeX (including decomposition and integration).\n\n"
+        "Output format:\n"
+        "{\n"
+        "  \"question_latex\": \"\\\\int ... dx\",\n"
+        "  \"solution_latex\": \"... full LaTeX solution ...\"\n"
+        "}\n"
+        "Return only this JSON object."
+    ),
+}
+
+# =========================
+# 4) UI
+# =========================
+st.set_page_config(layout="wide")
+st.title("🧠 AI Question Generator – Calculus I (Final Review Style)")
+
+st.write("เลือกประเภทโจทย์ แล้วให้ AI ปั่นโจทย์ใหม่ที่ตรรกะเหมือนเดิมแต่ตัวเลข/หน้าตาเปลี่ยน")
+
+problem_type = st.selectbox("เลือกแนวโจทย์:", PROMPT_TEMPLATES.keys())
+
+# =========================
+# 5) ปุ่มสร้างโจทย์
+# =========================
+if st.button("🚀 ปั่นโจทย์ใหม่จากแนวนี้"):
+    selected_prompt = PROMPT_TEMPLATES[problem_type]
+
+    with st.spinner("กำลังให้ AI สร้างโจทย์..."):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=selected_prompt,
+                config=generation_config,
+            )
+            data = json.loads(response.text)
+            st.session_state.current_problem = {
+                "type": problem_type,
+                "question_latex": data.get("question_latex", ""),
+                "solution_latex": data.get("solution_latex", ""),
+            }
+        except Exception as e:
+            st.error(f"AI ส่งข้อมูลกลับมาผิดพลาด (หรือไม่ใช่ JSON): {e}")
+            if 'response' in locals():
+                st.error(f"ข้อมูลดิบที่ได้รับจากโมเดล: {response.text}")
+
+# =========================
+# 6) แสดงโจทย์ + LaTeX
+# =========================
+if "current_problem" in st.session_state:
+    prob = st.session_state.current_problem
+
+    st.subheader(f"แนวที่เลือก: {prob['type']}")
+
+    st.markdown("### 📘 โจทย์ (เรนเดอร์ด้วย LaTeX)")
+    if prob["question_latex"]:
+        st.latex(prob["question_latex"])
+        with st.expander("ดูโค้ด LaTeX ของโจทย์ (ก๊อปไปใช้ต่อได้)"):
+            st.code(prob["question_latex"], language="latex")
+    else:
+        st.warning("ไม่มี `question_latex` ใน JSON ที่ได้รับ")
+
+    st.markdown("### ✅ เฉลย (เรนเดอร์ด้วย LaTeX)")
+    if prob["solution_latex"]:
+        st.latex(prob["solution_latex"])
+        with st.expander("ดูโค้ด LaTeX ของเฉลย (ก๊อปไปใช้ต่อได้)"):
+            st.code(prob["solution_latex"], language="latex")
+    else:
+        st.warning("ไม่มี `solution_latex` ใน JSON ที่ได้รับ")
