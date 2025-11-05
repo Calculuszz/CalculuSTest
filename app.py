@@ -3,22 +3,21 @@ from google import genai
 from google.genai import types
 import json
 import os
-import random  # 👈 1. เพิ่ม import random
 
-# --- 1. การตั้งค่า API Key (เหมือนเดิม) ---
+# --- 1. การตั้งค่า API Key (ควรใช้ st.secrets) ---
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except st.errors.SecretsKeyNotFoundError:
     st.error("กรุณาตั้งค่า GEMINI_API_KEY ใน Streamlit Secrets (ไฟล์ .streamlit/secrets.toml)")
     st.stop()
 
-# --- 2. การตั้งค่า Client และ Config (เหมือนเดิม) ---
+# --- 2. การตั้งค่า Client และ Config ---
 client = genai.Client(api_key=API_KEY)
 generation_config = types.GenerateContentConfig(
     response_mime_type="application/json",
 )
 
-# --- 3. ฟังก์ชันสำหรับบันทึกและโหลดโจทย์ (เหมือนเดิม) ---
+# --- 3. ฟังก์ชันสำหรับบันทึกและโหลดโจทย์ ---
 PROBLEM_FILE = "saved_problems.jsonl"
 
 @st.cache_data
@@ -31,20 +30,17 @@ def load_problems():
                 try:
                     problems.append(json.loads(line))
                 except json.JSONDecodeError:
-                    pass
+                    pass # ข้ามบรรทัดที่อาจจะเสียหาย
     return problems
 
 def save_problem(problem_data):
     """บันทึกโจทย์ใหม่ 1 ข้อ ลงในไฟล์ JSONL"""
     with open(PROBLEM_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(problem_data) + "\n")
+    # เคลียร์ cache ของ Streamlit เพื่อให้มันโหลดข้อมูลใหม่
     load_problems.clear()
 
-# --- 4. ⭐️ คลังแม่แบบ Prompt (โครงสร้างใหม่) ⭐️ ---
-#
-# เราจะเปลี่ยนจาก "key": (prompt) 
-# เป็น "key": [ (prompt_1), (prompt_2), ... ]
-#
+# --- 4. คลังแม่แบบ Prompt (เว้นไว้ตามที่คุณขอ) ---
 PROMPT_TEMPLATES = {
 
     # ---------- Part A : Absolute extrema ----------
@@ -130,27 +126,39 @@ PROMPT_TEMPLATES = {
     "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
     ),
     
- "A3: Limits": [
-        (   # ⭐️ Prompt 1: แบบ "ถึก L'Hopital" (ที่คุณเขียนไว้)
-            "You are an AI Question Generator for a Calculus I final review.\n"
-            "Original exam model:\n"
-            "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n"
-            # ... (เนื้อหา prompt A3 (L'Hopital) ของคุณ)...
-            "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
-        ),
-        (   # ⭐️ Prompt 2: แบบ "Insight (Taylor Series)" (ที่คุณเพิ่งขอ)
-            "You are an AI Question Generator for a Calculus I final review.\n"
-            "Original exam model:\n"
-            "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n\n"
-            "Your task:\n"
-            "1) Generate ONE NEW limit problem as $x \\to 0$...\n"
-            "2) This problem MUST be 'ถึกขึ้น' (more tedious) by being solvable in two ways:\n"
-            "   - Path A (Tedious): Solvable with L'Hopital's rule, but requiring **at least three (3)** applications...\n"
-            "   - Path B (Insight): Solvable elegantly in a few steps using **Taylor (Maclaurin) Series expansions**...\n"
-            # ... (เนื้อหา prompt A3 (Taylor) ของคุณ)...
-            "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
-        )
-    ],
+    "A3: Limits": (
+    "You are an AI Question Generator for a Calculus I final review.\n"
+    "Original exam model:\n"
+    "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n"
+    "A3(i) $lim_{x\\rightarrow 0^{+}}(\\frac{1}{x}-csc~x)$\n"
+    "A3(j) $lim_{x\\rightarrow -\\infty}x~ln(\\frac{3x-1}{3x+1})$\n\n"
+    "Your task:\n"
+    "1) Generate ONE NEW limit problem that follows the most complex logic from A3: indeterminate forms $0 \\cdot \\infty$ or $\\infty - \\infty$.\n"
+    "   - The problem MUST require significant algebraic manipulation (e.g., combining fractions, or rewriting as a single fraction) *before* L'Hopital's rule can be applied.\n"
+    "   - The goal is to be 'ถึกขึ้น' (more tedious): After the initial manipulation, the resulting $0/0$ form should require L'Hopital's rule to be applied at least **twice** or **three times** to solve.\n"
+    "   - Do not create a simple $0/0$ or $\\infty/\\infty$ problem.\n"
+    "2) Solve it completely, showing all steps: the initial form, the algebraic manipulation, and all subsequent applications of L'Hopital's rule.\n\n"
+    "VERY IMPORTANT LaTeX RULES:\n"
+    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
+    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
+    "- If you need to write words (Let, Form, Combine, L'H, etc.), wrap them inside `\\\\text{...}`.\n"
+    "- Example of the STYLE (example only for A3(i)):\n"
+    "  \"\\\\begin{align*}\n"
+    "     L &= \\\\lim_{x\\\\to 0^{+}}(\\\\frac{1}{x}-c s c~x) \\\\quad (\\\\text{Form } \\\\infty - \\\\infty) \\\\\n"
+    "       &= \\\\lim_{x\\\\to 0^{+}}(\\\\frac{1}{x} - \\\\frac{1}{\\\\sin x}) \\\\\n"
+    "       &= \\\\lim_{x\\\\to 0^{+}} \\\\frac{\\\\sin x - x}{x \\\\sin x} \\\\quad (\\\\text{Form } 0/0) \\\\\n"
+    "       &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^{+}} \\\\frac{\\\\cos x - 1}{\\\\sin x + x \\\\cos x} \\\\quad (\\\\text{Form } 0/0) \\\\\n"
+    "       &\\\\overset{L'H}{=} \\\\lim_{x\\\\to 0^{+}} \\\\frac{-\\\\sin x}{\\\\cos x + \\\\cos x - x \\\\sin x} \\\\\n"
+    "       &= \\\\frac{-0}{1 + 1 - 0} = 0\n"
+    "   \\\\end{align*}\".\n\n"
+    "Output format:\n"
+    "{\n"
+    "  \"question_latex\": \"\\\\text{จงหาค่าลิมิต } \\\\lim_{x\\\\to ...} ...\",\n"
+    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
+    "}\n"
+    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+    ),
+    
     "B1: Indeterminate Powers": (
     "You are an AI Question Generator for a Calculus I final review.\n"
     "Original exam model:\n"
@@ -850,31 +858,28 @@ st.write("เลือกประเภทโจทย์ตาม File Final R
 problem_type = st.selectbox("เลือกแนวโจทย์:", PROMPT_TEMPLATES.keys())
 
 if st.button("🚀 Gen Problem"):
-    
-    # --- ⭐️ 3. ตรรกะใหม่ที่แก้ไข ⭐️ ---
-    # ดึง "ลิสต์" ของ prompt ที่เป็นไปได้ออกมา
-    prompt_list = PROMPT_TEMPLATES[problem_type]
-    
-    # สุ่มเลือก 1 prompt จากลิสต์นั้น
-    selected_prompt = random.choice(prompt_list)
-    # -----------------------------------
+    selected_prompt = PROMPT_TEMPLATES[problem_type]
 
     with st.spinner("กำลังให้ AI สร้างโจทย์..."):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash", 
+                model="gemini-2.5-flash", # แนะนำให้ใช้ Flash หรือ Pro 1.5
                 contents=selected_prompt,
                 config=generation_config,
             )
             data = json.loads(response.text)
             
+            # สร้าง object ที่จะบันทึก
             problem_to_save = {
                 "type": problem_type,
                 "question_latex": data.get("question_latex", ""),
                 "solution_latex": data.get("solution_latex", ""),
             }
             
+            # ⭐️ บันทึกลงไฟล์ ⭐️
             save_problem(problem_to_save)
+            
+            # บันทึกลง session state เพื่อแสดงผลทันที
             st.session_state.current_problem = problem_to_save
             
         except Exception as e:
@@ -882,10 +887,12 @@ if st.button("🚀 Gen Problem"):
             if 'response' in locals():
                 st.error(f"ข้อมูลดิบที่ได้รับจากโมเดล: {response.text}")
 
-# --- 6. ส่วนแสดงผลโจทย์ที่เพิ่ง Gen (เหมือนเดิม) ---
+# --- 6. ส่วนแสดงผลโจทย์ที่เพิ่ง Gen ---
 if "current_problem" in st.session_state:
     prob = st.session_state.current_problem
+
     st.subheader(f"แนวที่เลือก (โจทย์ล่าสุด): {prob['type']}")
+
     st.markdown("### 📘 โจทย์")
     if prob["question_latex"]:
         st.latex(prob["question_latex"])
@@ -893,6 +900,7 @@ if "current_problem" in st.session_state:
             st.code(prob["question_latex"], language="latex")
     else:
         st.warning("ไม่มี `question_latex` ใน JSON ที่ได้รับ")
+
     st.markdown("### ✅ เฉลย")
     if prob["solution_latex"]:
         st.latex(prob["solution_latex"])
@@ -901,16 +909,20 @@ if "current_problem" in st.session_state:
     else:
         st.warning("ไม่มี `solution_latex` ใน JSON ที่ได้รับ")
 
-# --- 7. ส่วน Sidebar (คลังโจทย์) (เหมือนเดิม) ---
+# --- 7. ส่วน Sidebar (คลังโจทย์) ---
 st.sidebar.title("🗃️ คลังโจทย์ที่บันทึกไว้")
+
 saved_problems = load_problems()
 total_problems = len(saved_problems)
+
 st.sidebar.write(f"มีโจทย์ทั้งหมด {total_problems} ข้อ")
 
+# แสดงผลแบบกลับหลัง (โจทย์ใหม่สุดอยู่บน)
 for i, prob in enumerate(reversed(saved_problems)):
+    # ใช้ index ที่นับถอยหลังเพื่อให้โจทย์ล่าสุดเป็นเลขข้อที่มากที่สุด
     problem_number = total_problems - i 
     with st.sidebar.expander(f"ข้อที่ {problem_number}: {prob['type']}"):
         st.markdown("**โจทย์:**")
         st.latex(prob['question_latex'])
         st.markdown("**เฉลย:**")
-        st.latex(prob['solution_latex'])        
+        st.latex(prob['solution_latex'])
