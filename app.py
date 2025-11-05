@@ -3,29 +3,19 @@ from google import genai
 from google.genai import types
 import json
 
-# =========================
-# 1) ใส่ API KEY ตรงนี้เลย
-# =========================
+
 API_KEY = st.secrets["GEMINI_API_KEY"]  # 👈 แทนที่ด้วยคีย์ของคุณ
 
 if API_KEY == "YOUR_API_KEY_HERE":
     st.error("กรุณาใส่ API key ในตัวแปร API_KEY ก่อนรัน")
     st.stop()
 
-# สร้าง client ของ Gemini
 client = genai.Client(api_key=API_KEY)
 
-# =========================
-# 2) ตั้งค่าให้ตอบกลับเป็น JSON + LaTeX
-# =========================
 generation_config = types.GenerateContentConfig(
     response_mime_type="application/json",
 )
 
-# =========================
-# 3) PROMPT_TEMPLATES
-#    ใช้โจทย์จาก Final Review เป็น "ต้นแบบ"
-# =========================
 PROMPT_TEMPLATES = {
 
     # ---------- Part A : Absolute extrema ----------
@@ -830,9 +820,6 @@ PROMPT_TEMPLATES = {
 )
 }
 
-# =========================
-# 4) UI
-# =========================
 st.set_page_config(layout="wide")
 st.title("🧠 Quiz – Calculus I (Final Review)")
 
@@ -840,9 +827,6 @@ st.write("เลือกประเภทโจทย์ตาม Flie Final R
 
 problem_type = st.selectbox("เลือกแนวโจทย์:", PROMPT_TEMPLATES.keys())
 
-# =========================
-# 5) ปุ่มสร้างโจทย์
-# =========================
 if st.button("🚀 Gen Problem"):
     selected_prompt = PROMPT_TEMPLATES[problem_type]
 
@@ -864,9 +848,6 @@ if st.button("🚀 Gen Problem"):
             if 'response' in locals():
                 st.error(f"ข้อมูลดิบที่ได้รับจากโมเดล: {response.text}")
 
-# =========================
-# 6) แสดงโจทย์ + LaTeX
-# =========================
 if "current_problem" in st.session_state:
     prob = st.session_state.current_problem
 
