@@ -850,7 +850,6 @@ if not PROMPT_TEMPLATES:
      st.error("กรุณาเพิ่ม PROMPT_TEMPLATES ของคุณก่อน")
      st.stop()
 
-
 # --- 5. ส่วนหน้าเว็บหลัก (Main Page) ---
 st.set_page_config(layout="wide")
 st.title("🧠 Quiz – Calculus I (Final Review)")
