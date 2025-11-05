@@ -130,41 +130,27 @@ PROMPT_TEMPLATES = {
     "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
     ),
     
- "A3: Limits (Harder - Taylor/L'Hopital)": (
-    "You are an AI Question Generator for a Calculus I final review.\n"
-    "Original exam model:\n"
-    "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n"
-    "A3(i) $lim_{x\\rightarrow 0^{+}}(\\frac{1}{x}-csc~x)$\n\n"
-    "Your task:\n"
-    "1) Generate ONE NEW limit problem as $x \\to 0$ in an indeterminate form $0/0$ or $\\infty - \\infty$.\n"
-    "2) This problem MUST be 'ถึกขึ้น' (more tedious) by being solvable in two ways:\n"
-    "   - Path A (Tedious): Solvable with L'Hopital's rule, but requiring **at least three (3)** applications with complex product/quotient rules.\n"
-    "   - Path B (Insight): Solvable elegantly in a few steps using **Taylor (Maclaurin) Series expansions** (e.g., for $e^x, \\sin x, \\ln(1+x)$).\n"
-    "3) The problem MUST involve a combination of at least 3 functions (e.g., $e^x, \\cos x, x^2$)\n"
-    "4. The AI solution **MUST** show the **Taylor Series method** as the primary solution, as this is the 'insight' we are testing. It should find the first non-zero term of the expansion.\n\n"
-    "VERY IMPORTANT LaTeX RULES:\n"
-    "- The value of `solution_latex` MUST be a **single math environment** starting with\n"
-    "  `\\\\begin{align*}` and ending with `\\\\end{align*}`.\n"
-    "- If you need to write words (Let, Form, Use Taylor Series, etc.), wrap them inside `\\\\text{...}`.\n"
-    "- Example of the STYLE (example only):\n"
-    "  \"\\\\begin{align*}\n"
-    "     L &= \\\\lim_{x\\\\to 0} \\\\frac{e^x - \\\\ln(1+x) - 1}{x^2} \\\\\n"
-    "     \\\\text{L'Hopital is possible (2 times), but we use Taylor Series.} \\\\\n"
-    "     \\\\text{Use: } e^x &= 1 + x + \\\\frac{x^2}{2!} + O(x^3) \\\\\n"
-    "     \\\\ln(1+x) &= x - \\\\frac{x^2}{2} + O(x^3) \\\\\n"
-    "     \\\\text{Substitute:} & \\\\\n"
-    "     L &= \\\\lim_{x\\\\to 0} \\\\frac{ (1 + x + \\\\frac{x^2}{2} + ...) - (x - \\\\frac{x^2}{2} + ...) - 1 }{x^2} \\\\\n"
-    "       &= \\\\lim_{x\\\\to 0} \\\\frac{ (1-1) + (x-x) + (\\\\frac{x^2}{2} + \\\\frac{x^2}{2}) + O(x^3) }{x^2} \\\\\n"
-    "       &= \\\\lim_{x\\\\to 0} \\\\frac{ x^2 + O(x^3) }{x^2} \\\\\n"
-    "       &= \\\\lim_{x\\\\to 0} (1 + O(x)) = 1\n"
-    "   \\\\end{align*}\".\n\n"
-    "Output format:\n"
-    "{\n"
-    "  \"question_latex\": \"\\\\text{จงหาค่าลิมิต } \\\\lim_{x\\\\to ...} ...\",\n"
-    "  \"solution_latex\": \"\\\\begin{align*} ... \\\\end{align*}\"\n"
-    "}\n"
-    "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
-),
+ "A3: Limits": [
+        (   # ⭐️ Prompt 1: แบบ "ถึก L'Hopital" (ที่คุณเขียนไว้)
+            "You are an AI Question Generator for a Calculus I final review.\n"
+            "Original exam model:\n"
+            "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n"
+            # ... (เนื้อหา prompt A3 (L'Hopital) ของคุณ)...
+            "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+        ),
+        (   # ⭐️ Prompt 2: แบบ "Insight (Taylor Series)" (ที่คุณเพิ่งขอ)
+            "You are an AI Question Generator for a Calculus I final review.\n"
+            "Original exam model:\n"
+            "A3(g) $lim_{x\\rightarrow 0^{+}}(\\frac{e^{x}}{ln(1+x)}-\\frac{1}{x})$\n\n"
+            "Your task:\n"
+            "1) Generate ONE NEW limit problem as $x \\to 0$...\n"
+            "2) This problem MUST be 'ถึกขึ้น' (more tedious) by being solvable in two ways:\n"
+            "   - Path A (Tedious): Solvable with L'Hopital's rule, but requiring **at least three (3)** applications...\n"
+            "   - Path B (Insight): Solvable elegantly in a few steps using **Taylor (Maclaurin) Series expansions**...\n"
+            # ... (เนื้อหา prompt A3 (Taylor) ของคุณ)...
+            "Return ONLY this JSON object. No extra keys, no explanations outside LaTeX."
+        )
+    ],
     "B1: Indeterminate Powers": (
     "You are an AI Question Generator for a Calculus I final review.\n"
     "Original exam model:\n"
