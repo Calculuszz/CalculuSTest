@@ -2,20 +2,45 @@ import streamlit as st
 from google import genai
 from google.genai import types
 import json
+import os
 
-
-API_KEY = st.secrets["GEMINI_API_KEY"]  # 👈 แทนที่ด้วยคีย์ของคุณ
-
-if API_KEY == "YOUR_API_KEY_HERE":
-    st.error("กรุณาใส่ API key ในตัวแปร API_KEY ก่อนรัน")
+# --- 1. การตั้งค่า API Key (ควรใช้ st.secrets) ---
+try:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+except st.errors.SecretsKeyNotFoundError:
+    st.error("กรุณาตั้งค่า GEMINI_API_KEY ใน Streamlit Secrets (ไฟล์ .streamlit/secrets.toml)")
     st.stop()
 
+# --- 2. การตั้งค่า Client และ Config ---
 client = genai.Client(api_key=API_KEY)
-
 generation_config = types.GenerateContentConfig(
     response_mime_type="application/json",
 )
 
+# --- 3. ฟังก์ชันสำหรับบันทึกและโหลดโจทย์ ---
+PROBLEM_FILE = "saved_problems.jsonl"
+
+@st.cache_data
+def load_problems():
+    """โหลดโจทย์ทั้งหมดจากไฟล์ JSONL"""
+    problems = []
+    if os.path.exists(PROBLEM_FILE):
+        with open(PROBLEM_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    problems.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass # ข้ามบรรทัดที่อาจจะเสียหาย
+    return problems
+
+def save_problem(problem_data):
+    """บันทึกโจทย์ใหม่ 1 ข้อ ลงในไฟล์ JSONL"""
+    with open(PROBLEM_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(problem_data) + "\n")
+    # เคลียร์ cache ของ Streamlit เพื่อให้มันโหลดข้อมูลใหม่
+    load_problems.clear()
+
+# --- 4. คลังแม่แบบ Prompt (เว้นไว้ตามที่คุณขอ) ---
 PROMPT_TEMPLATES = {
 
     # ---------- Part A : Absolute extrema ----------
@@ -820,10 +845,16 @@ PROMPT_TEMPLATES = {
 )
 }
 
+# ตรวจสอบว่ามี Prompt อย่างน้อย 1 อัน
+if not PROMPT_TEMPLATES:
+     st.error("กรุณาเพิ่ม PROMPT_TEMPLATES ของคุณก่อน")
+     st.stop()
+
+
+# --- 5. ส่วนหน้าเว็บหลัก (Main Page) ---
 st.set_page_config(layout="wide")
 st.title("🧠 Quiz – Calculus I (Final Review)")
-
-st.write("เลือกประเภทโจทย์ตาม Flie Final Review Problems")
+st.write("เลือกประเภทโจทย์ตาม File Final Review Problems")
 
 problem_type = st.selectbox("เลือกแนวโจทย์:", PROMPT_TEMPLATES.keys())
 
@@ -833,30 +864,40 @@ if st.button("🚀 Gen Problem"):
     with st.spinner("กำลังให้ AI สร้างโจทย์..."):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.5-flash", # แนะนำให้ใช้ Flash หรือ Pro 1.5
                 contents=selected_prompt,
                 config=generation_config,
             )
             data = json.loads(response.text)
-            st.session_state.current_problem = {
+            
+            # สร้าง object ที่จะบันทึก
+            problem_to_save = {
                 "type": problem_type,
                 "question_latex": data.get("question_latex", ""),
                 "solution_latex": data.get("solution_latex", ""),
             }
+            
+            # ⭐️ บันทึกลงไฟล์ ⭐️
+            save_problem(problem_to_save)
+            
+            # บันทึกลง session state เพื่อแสดงผลทันที
+            st.session_state.current_problem = problem_to_save
+            
         except Exception as e:
             st.error(f"AI ส่งข้อมูลกลับมาผิดพลาด (หรือไม่ใช่ JSON): {e}")
             if 'response' in locals():
                 st.error(f"ข้อมูลดิบที่ได้รับจากโมเดล: {response.text}")
 
+# --- 6. ส่วนแสดงผลโจทย์ที่เพิ่ง Gen ---
 if "current_problem" in st.session_state:
     prob = st.session_state.current_problem
 
-    st.subheader(f"แนวที่เลือก: {prob['type']}")
+    st.subheader(f"แนวที่เลือก (โจทย์ล่าสุด): {prob['type']}")
 
     st.markdown("### 📘 โจทย์")
     if prob["question_latex"]:
         st.latex(prob["question_latex"])
-        with st.expander("ดูโค้ด LaTeX ของโจทย์ (ก๊อปไปใช้ต่อได้)"):
+        with st.expander("ดูโค้ด LaTeX ของโจทย์"):
             st.code(prob["question_latex"], language="latex")
     else:
         st.warning("ไม่มี `question_latex` ใน JSON ที่ได้รับ")
@@ -864,7 +905,25 @@ if "current_problem" in st.session_state:
     st.markdown("### ✅ เฉลย")
     if prob["solution_latex"]:
         st.latex(prob["solution_latex"])
-        with st.expander("ดูโค้ด LaTeX ของเฉลย (ก๊อปไปใช้ต่อได้)"):
+        with st.expander("ดูโค้ด LaTeX ของเฉลย"):
             st.code(prob["solution_latex"], language="latex")
     else:
         st.warning("ไม่มี `solution_latex` ใน JSON ที่ได้รับ")
+
+# --- 7. ส่วน Sidebar (คลังโจทย์) ---
+st.sidebar.title("🗃️ คลังโจทย์ที่บันทึกไว้")
+
+saved_problems = load_problems()
+total_problems = len(saved_problems)
+
+st.sidebar.write(f"มีโจทย์ทั้งหมด {total_problems} ข้อ")
+
+# แสดงผลแบบกลับหลัง (โจทย์ใหม่สุดอยู่บน)
+for i, prob in enumerate(reversed(saved_problems)):
+    # ใช้ index ที่นับถอยหลังเพื่อให้โจทย์ล่าสุดเป็นเลขข้อที่มากที่สุด
+    problem_number = total_problems - i 
+    with st.sidebar.expander(f"ข้อที่ {problem_number}: {prob['type']}"):
+        st.markdown("**โจทย์:**")
+        st.latex(prob['question_latex'])
+        st.markdown("**เฉลย:**")
+        st.latex(prob['solution_latex'])
