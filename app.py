@@ -862,7 +862,7 @@ if st.button("🚀 Gen Problem"):
     with st.spinner("กำลังให้ AI สร้างโจทย์..."):
         try:
             response = client.models.generate_content(
-                model="gemini-1.5-flash", 
+                model="gemini-2.5-flash", 
                 contents=selected_prompt,
                 config=generation_config,
             )
